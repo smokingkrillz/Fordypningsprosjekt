@@ -1,1 +1,8 @@
+numpy
 zensical
+matplotlib
+pandas
+torch
+scikit-learn
+torchsummary
+openpyxl
