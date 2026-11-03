@@ -2,16 +2,18 @@
 site_url = "https://www.example.com/"
 site_name = "Documentation"
 # site_description = "Your project description"
-# site_author = "Your name"
+# site_author = "Aditi Deshpande"
 
 # copyright = "Copyright &copy; 2026 Your name"
 
 # repo_url = "https://github.com/user/repo"
 # repo_name = "user/repo"
 # edit_uri = "edit/main/docs/"
-
+dev_addr = "localhost:3000"
 nav = [
   { "Get started" = "index.md" },
+   { "USM loader" = "load_usm.md" },
+   { "API reference" = "api.md" },
   { "Markdown in 5min" = "markdown.md" },
 ]
 
@@ -116,3 +118,11 @@ pymdownx.tabbed.alternate_style = true
 pymdownx.tabbed.combine_header_slug = true
 pymdownx.tasklist.custom_checkbox = true
 pymdownx.tilde = {}
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["."]    # folder that contains load_usm.py
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = true
+members_order = "source"

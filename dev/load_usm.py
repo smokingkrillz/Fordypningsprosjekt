@@ -12,9 +12,9 @@ import datetime
 import numpy as np
 import pandas as pd
 
-FILE = "Vega 2st stage low flow.xlsx"
-HEADER_ROW = 7          # 0-based row index with the column names (header=None)
-DATA_ROW = 9            # 0-based row index of the first data row
+FILE = "input/Vega 2st stage low flow.xlsx"
+HEADER_ROW = 6          # 0-based row index with the column names (header=None)
+DATA_ROW = 8           # 0-based row index of the first data row
 
 RENAME = {
     "Volume flow rate": "q_vol",
@@ -48,63 +48,97 @@ GAS_RENAME = {
 PATHS = ["p1", "p2", "p3"]
 
 
+class USMLoader:
+    """Reads the USM Excel export and builds one DataFrame per run sheet.
 
-def to_datetime(col):
-    """Convert one timestamp column from the Excel sheet into proper pandas datetimes.
-
-    1. The column has dtype "object" (mixed types), but some cells are datetimes.
-       Happens when the column also contains text or blanks, e.g. a "Total" row
-       at the bottom. We keep the datetime cells and turn everything else into NaT.
-
-
-    In every case the result is rounded to whole seconds, because Excel's
-    floating-point storage gives values like 12:00:00.000001 that would
-    otherwise fail to match when joining sheets on time.
+    Usage:
+        loader = USMLoader("input/Vega 2st stage low flow.xlsx")
+        runs, gas = loader.load()
+    After load(), the results are also kept on the object as loader.runs and loader.gas.
     """
-    is_datetime_value =isinstance(col, datetime.datetime)
-    is_dt = col.map(is_datetime_value)          # True/False for each cell
-    only_dates = col.where(is_dt)           # non-datetime cells -> NaN
-     # True if a single cell value is a date/time object (pandas Timestamp is a subclass of datetime)
-    return pd.to_datetime(only_dates, errors="coerce").dt.round("s")
 
-   
+    def __init__(self, path=FILE):
+        self.path = path
+        self.runs = {}      # sheet name -> DataFrame, filled by load()
+        self.gas = None     # gas-quality DataFrame, filled by load()
 
-def read_sheet(path, sheet, rename):
-    raw = pd.read_excel(path, sheet_name=sheet, header=None)
-    names = raw.iloc[HEADER_ROW].tolist()
-    df = raw.iloc[DATA_ROW:].copy()
-    df.columns = ["t_start", "t_end"] + [rename.get(n, n) for n in names[2:]]
-    df["t_start"] = to_datetime(df["t_start"])
-    df = df.dropna(subset=["t_start"]).drop(columns="t_end")
-    df = df[[c for c in df.columns if not pd.isna(c)]]
-    df = df.set_index("t_start").sort_index()             # index first, so it is not coerced to numbers
-    return df.apply(pd.to_numeric, errors="coerce")
+    @staticmethod
+    def is_datetime_value(x):
+        """True if a single cell value is a date/time object."""
+        return isinstance(x, datetime.datetime)
 
+    @staticmethod
+    def to_datetime(col):
+        """Convert one timestamp column from the Excel sheet into proper pandas datetimes.
+        The column has dtype "object", but some cells are datetimes or
+        when the column also contains text or blanks.
+        The result is rounded to whole seconds, because Excel's
+        floating-point storage gives values like 12:00:00.000001 that would
+        otherwise fail to match when joining sheets on time.
+        """
+        is_dt = col.map(USMLoader.is_datetime_value)
+        only_dates = col.where(is_dt)
+        return pd.to_datetime(only_dates, errors="coerce").dt.round("s")
 
-def add_indicators(df):
-    # cross-path VOS deviation: path minus mean of the other paths
-    for p in PATHS:
-        others = [q for q in PATHS if q != p]
-        df[f"dev_{p}"] = df[f"vos_{p}"] - df[[f"vos_{q}"for q in others]].mean(axis=1)
-    # GC discrepancy: calculated from GC minus measured
-    df["gc_disc"] = df["vos_gc"] - df["vos_avg"]
-    return df
+    def read_sheet(self, sheet, rename):
+        raw = pd.read_excel(self.path, sheet_name=sheet, header=None)
+        # header row in location 7
+        names = raw.iloc[HEADER_ROW].tolist()
+        df = raw.iloc[DATA_ROW:].copy()
+
+        time_columns = ["t_start", "t_end"]
+
+        value_columns = []
+        for original_name in names[2:]: 
+            if original_name in rename:
+                new_name = rename[original_name]
+            else:
+                new_name = original_name
+            value_columns.append(new_name)
+
+        # Put the two lists together and use them as the column names
+        df.columns = time_columns + value_columns
+        print(value_columns)
+        df["t_start"] = self.to_datetime(df["t_start"])
+        df = df.dropna(subset=["t_start"]).drop(columns="t_end")
+
+        
+        named_columns = []
+        for c in df.columns:
+            if not pd.isna(c):
+                named_columns.append(c)
+        df = df[named_columns]
+        df = df.set_index("t_start").sort_index()             # index first, so it is not coerced to numbers
+        return df.apply(pd.to_numeric, errors="coerce")
+
+    @staticmethod
+    def add_indicators(df):
+        # cross-path VOS deviation: path minus mean of the other paths
+        for p in PATHS:
+            others = [q for q in PATHS if q != p]
+            df[f"dev_{p}"] = df[f"vos_{p}"] - df[[f"vos_{q}" for q in others]].mean(axis=1)
+        # GC discrepancy: calculated from GC minus measured
+        df["gc_disc"] = df["vos_gc"] - df["vos_avg"]
+        return df
+
+    def load(self):
+        xl = pd.ExcelFile(self.path)
+        run_sheets = [s for s in xl.sheet_names if "run" in s.lower()]
+        gas_sheet = [s for s in xl.sheet_names if "gas" in s.lower()][0]
+        self.gas = self.read_sheet(gas_sheet, GAS_RENAME)
+        self.runs = {}
+        for s in run_sheets:
+            df = self.read_sheet(s, RENAME)
+            df = df.join(self.gas.drop(columns="vos_gc"), how="left")   # composition aligned on t_start
+            df["zero_flow"] = df["q_vol"].fillna(0).eq(0)               # flag, don't drop yet
+            self.runs[s] = self.add_indicators(df)
+        return self.runs, self.gas
+
+    def summary(self):
+        for k, v in self.runs.items():
+            print(k, v.shape, "zero-flow rows:", int(v.zero_flow.sum()), "NaNs:", int(v.isna().sum().sum()))
 
 
 def load(path=FILE):
-    xl = pd.ExcelFile(path)
-    run_sheets = [s for s in xl.sheet_names if "run" in s.lower()]
-    gas = read_sheet(path, [s for s in xl.sheet_names if "gas" in s.lower()][0], GAS_RENAME)
-    runs = {}
-    for s in run_sheets:
-        df = read_sheet(path, s, RENAME)
-        df = df.join(gas.drop(columns="vos_gc"), how="left")   # composition aligned on t_start
-        df["zero_flow"] = df["q_vol"].fillna(0).eq(0)          # flag, don't drop yet
-        runs[s] = add_indicators(df)
-    return runs, gas
-
-
-if __name__ == "__main__":
-    runs, gas = load()
-    for k, v in runs.items():
-        print(k, v.shape, "zero-flow rows:", int(v.zero_flow.sum()), "NaNs:", int(v.isna().sum().sum()))
+    """Shortcut so existing code (plot_usm.py) can keep calling load_usm.load()."""
+    return USMLoader(path).load()

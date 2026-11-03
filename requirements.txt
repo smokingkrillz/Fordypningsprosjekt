@@ -6,3 +6,4 @@ torch
 scikit-learn
 torchsummary
 openpyxl
+mkdocstrings-python
