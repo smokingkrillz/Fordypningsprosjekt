@@ -56,15 +56,15 @@ class USMLoader:
         runs, gas = loader.load()
     After load(), the results are also kept on the object as loader.runs and loader.gas.
     """
-
     def __init__(self, path=FILE):
         self.path = path
         self.runs = {}      # sheet name -> DataFrame, filled by load()
         self.gas = None     # gas-quality DataFrame, filled by load()
 
     @staticmethod
-    def is_datetime_value(x):
+    def is_datetime_value(x: str) -> bool:
         """True if a single cell value is a date/time object."""
+        print(type(x))
         return isinstance(x, datetime.datetime)
 
     @staticmethod
@@ -81,8 +81,12 @@ class USMLoader:
         return pd.to_datetime(only_dates, errors="coerce").dt.round("s")
 
     def read_sheet(self, sheet, rename):
+        """ 
+        Takes one excel sheet, renames columns.
+
+        """
         raw = pd.read_excel(self.path, sheet_name=sheet, header=None)
-        # header row in location 7
+
         names = raw.iloc[HEADER_ROW].tolist()
         df = raw.iloc[DATA_ROW:].copy()
 
@@ -98,45 +102,103 @@ class USMLoader:
 
         # Put the two lists together and use them as the column names
         df.columns = time_columns + value_columns
-        print(value_columns)
+        #convert to real time
         df["t_start"] = self.to_datetime(df["t_start"])
+        #drop missing t values and not need end time
         df = df.dropna(subset=["t_start"]).drop(columns="t_end")
 
-        
+        #  Keep only the columns that have a name
         named_columns = []
-        for c in df.columns:
-            if not pd.isna(c):
-                named_columns.append(c)
+        for column_names in df.columns:
+            if not pd.isna(column_names):
+                named_columns.append(column_names)
+        
+        # index first, so it is not coerced to numbers
         df = df[named_columns]
-        df = df.set_index("t_start").sort_index()             # index first, so it is not coerced to numbers
+        df = df.set_index("t_start").sort_index()  
+        # making every value a number, coerce makes bad data to nan   
         return df.apply(pd.to_numeric, errors="coerce")
 
     @staticmethod
     def add_indicators(df):
-        # cross-path VOS deviation: path minus mean of the other paths
-        for p in PATHS:
-            others = [q for q in PATHS if q != p]
-            df[f"dev_{p}"] = df[f"vos_{p}"] - df[[f"vos_{q}" for q in others]].mean(axis=1)
-        # GC discrepancy: calculated from GC minus measured
-        df["gc_disc"] = df["vos_gc"] - df["vos_avg"]
+        """cross-path VOS deviation: path minus mean of the other paths
+        
+            input parameters:
+            df : dtype        
+        """
+        for path in PATHS:         
+
+            # (a) find the names of the OTHER two paths
+            other_paths = []
+            for candidate in PATHS:
+                if candidate != path:
+                    other_paths.append(candidate)
+
+            # (b) this path's velocity of sound: f"vos_{path}" becomes "vos_p1"
+            this_path_vos = df[f"vos_{path}"]   
+
+            # (c) the other two paths' columns, and their average for each minute
+            other_column_names = []
+            for other in other_paths:
+                other_column_names.append(f"vos_{other}")
+            other_paths_vos = df[other_column_names]
+            # axis=1 means: average across the row
+            average_of_others = other_paths_vos.mean(axis=1)   
+
+            # (d) the new column: this path minus the average of the others
+            df[f"dev_{path}"] = this_path_vos - average_of_others
+
+        # GC discrepancy: velocity of sound from the gas composition minus the measured one
+        vos_from_gas = df["vos_gc"]
+        vos_measured = df["vos_avg"]
+        df["gc_disc"] = vos_from_gas - vos_measured
         return df
 
     def load(self):
-        xl = pd.ExcelFile(self.path)
-        run_sheets = [s for s in xl.sheet_names if "run" in s.lower()]
-        gas_sheet = [s for s in xl.sheet_names if "gas" in s.lower()][0]
+        """ Finds the right sheets, uses the other functions
+        adds gass composition
+        """
+        excel_file = pd.ExcelFile(self.path)
+        all_sheet_names = excel_file.sheet_names
+        # Sheets with "run" in the name are the meter data
+        run_sheets = []
+        for sheet_name in all_sheet_names:
+            if "run" in sheet_name.lower():
+                run_sheets.append(sheet_name)
+
+        # The sheet with "gas" in the name is the gas composition (take the first one)
+        gas_sheets = []
+        for sheet_name in all_sheet_names:
+            if "gas" in sheet_name.lower():
+                gas_sheets.append(sheet_name)
+        gas_sheet = gas_sheets[0]
+
+
         self.gas = self.read_sheet(gas_sheet, GAS_RENAME)
+
+        # a dictionary: a set of labelled tables
         self.runs = {}
-        for s in run_sheets:
-            df = self.read_sheet(s, RENAME)
-            df = df.join(self.gas.drop(columns="vos_gc"), how="left")   # composition aligned on t_start
-            df["zero_flow"] = df["q_vol"].fillna(0).eq(0)               # flag, don't drop yet
-            self.runs[s] = self.add_indicators(df)
+        for sheet_name in run_sheets:
+            df = self.read_sheet(sheet_name, RENAME)
+
+
+            # Attach the gas composition to each minute
+            gas_without_vos = self.gas.drop(columns="vos_gc")
+            df = df.join(gas_without_vos, how="left")
+            # First draft of the zero-flow flag: True where flow is 0 (or missing)
+            flow_with_gaps_filled = df["q_vol"].fillna(0)
+            df["zero_flow"] = flow_with_gaps_filled.eq(0)
+            self.runs[sheet_name] = self.add_indicators(df)
+
         return self.runs, self.gas
+    
 
     def summary(self):
-        for k, v in self.runs.items():
-            print(k, v.shape, "zero-flow rows:", int(v.zero_flow.sum()), "NaNs:", int(v.isna().sum().sum()))
+        """Print the size of every table."""
+        for name, df in self.runs.items():
+            number_of_zero_flow = int(df["zero_flow"].sum())
+            number_of_missing = int(df.isna().sum().sum())
+            print(name, df.shape, "zero-flow rows:", number_of_zero_flow, "NaNs:", number_of_missing)
 
 
 def load(path=FILE):

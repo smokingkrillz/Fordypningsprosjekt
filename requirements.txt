@@ -7,3 +7,4 @@ scikit-learn
 torchsummary
 openpyxl
 mkdocstrings-python
+pymdown-extensions<11  # 12.x breaks mkdocstrings' Highlighter (missing 'md' arg)

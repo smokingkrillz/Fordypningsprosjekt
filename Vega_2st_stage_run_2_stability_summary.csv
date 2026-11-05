@@ -1,0 +1,5 @@
+indicator,std,std_within_segment,drift_per_day,r2,unexplained_std,depends_on,verdict
+dev_p1,,,,,,-,insufficient data
+dev_p2,,,,,,-,insufficient data
+dev_p3,,,,,,-,insufficient data
+gc_disc,,,,,,-,insufficient data

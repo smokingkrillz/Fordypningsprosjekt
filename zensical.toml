@@ -1,20 +1,20 @@
 [project]
 site_url = "https://www.example.com/"
 site_name = "Documentation"
-# site_description = "Your project description"
-# site_author = "Aditi Deshpande"
+site_description = "Forecasting with USM CBM data"
+site_author = "Aditi Deshpande"
 
 # copyright = "Copyright &copy; 2026 Your name"
 
 # repo_url = "https://github.com/user/repo"
-# repo_name = "user/repo"
+# repo_name = "smokingkrillz/repo"
 # edit_uri = "edit/main/docs/"
 dev_addr = "localhost:3000"
 nav = [
   { "Get started" = "index.md" },
    { "USM loader" = "load_usm.md" },
-   { "API reference" = "api.md" },
-  { "Markdown in 5min" = "markdown.md" },
+  # { "API reference" = "api.md" },
+ # { "Markdown in 5min" = "markdown.md" },
 ]
 
 # extra_css = ["stylesheets/extra.css"]

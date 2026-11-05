@@ -4,6 +4,15 @@
         <loc>https://www.example.com/</loc>
       </url>
       <url>
+        <loc>https://www.example.com/api/</loc>
+      </url>
+      <url>
+        <loc>https://www.example.com/load_usm/</loc>
+      </url>
+      <url>
         <loc>https://www.example.com/markdown/</loc>
+      </url>
+      <url>
+        <loc>https://www.example.com/prepare/</loc>
       </url>
 </urlset>
