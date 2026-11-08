@@ -13,6 +13,12 @@ dev_addr = "localhost:3000"
 nav = [
   { "Get started" = "index.md" },
    { "USM loader" = "load_usm.md" },
+   { "Prepare" = "prepare.md" },
+   { "Stability" = "stability.md" },
+   { "Forecast Data" = "forecast.md" },
+   { "Baselines" = "baselines.md" },
+   { "Models" = "models.md" },
+
   # { "API reference" = "api.md" },
  # { "Markdown in 5min" = "markdown.md" },
 ]

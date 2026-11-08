@@ -129,6 +129,7 @@ class Prepare:
         return self.df[self.df["valid"]]
  
     def report(self):
+        "makes a report."
         df = self.df
         print(f"\n{self.name}: {len(df)} rows, {df.index.min()} -> {df.index.max()}")
         print(f"   low SNR: {int((~df.snr_ok).sum())}   implausible VOS: {int((~df.vos_ok).sum())}")

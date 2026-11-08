@@ -14,7 +14,6 @@ Columns of X
     q_vol, p, T, mw ...   process inputs at the origin
 
 Usage:
-    p = Prepare(runs["Vega 2st stage run 1"], name="run 1").prepare()
     ds = ForecastDataset(p, target="dev_p1", horizon=5, lookback=10)
     ds.check()
     splits = ds.split(train=0.6, val=0.2)      # {"train": Split, "val": Split, "test": Split}

@@ -2,3 +2,5 @@
 .github
 plots/
 input/
+venv/Lib
+venv/Scripts

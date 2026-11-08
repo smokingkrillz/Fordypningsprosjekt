@@ -4,15 +4,21 @@
         <loc>https://www.example.com/</loc>
       </url>
       <url>
-        <loc>https://www.example.com/api/</loc>
-      </url>
-      <url>
         <loc>https://www.example.com/load_usm/</loc>
       </url>
       <url>
-        <loc>https://www.example.com/markdown/</loc>
+        <loc>https://www.example.com/prepare/</loc>
       </url>
       <url>
-        <loc>https://www.example.com/prepare/</loc>
+        <loc>https://www.example.com/stability/</loc>
+      </url>
+      <url>
+        <loc>https://www.example.com/forecast/</loc>
+      </url>
+      <url>
+        <loc>https://www.example.com/baselines/</loc>
+      </url>
+      <url>
+        <loc>https://www.example.com/models/</loc>
       </url>
 </urlset>
