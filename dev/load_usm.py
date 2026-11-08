@@ -53,18 +53,17 @@ class USMLoader:
 
     Usage:
         loader = USMLoader("input/Vega 2st stage low flow.xlsx")
-        runs, gas = loader.load()
+        meter_data, gas_data = loader.load()
     After load(), the results are also kept on the object as loader.runs and loader.gas.
     """
     def __init__(self, path=FILE):
         self.path = path
-        self.runs = {}      # sheet name -> DataFrame, filled by load()
-        self.gas = None     # gas-quality DataFrame, filled by load()
+        self.meter_data = {}      # sheet name -> DataFrame, filled by load()
+        self.gas_data = None     # gas-quality DataFrame, filled by load()
 
     @staticmethod
-    def is_datetime_value(x: str) -> bool:
+    def is_datetime_value(x) -> bool:
         """True if a single cell value is a date/time object."""
-        print(type(x))
         return isinstance(x, datetime.datetime)
 
     @staticmethod
@@ -127,7 +126,6 @@ class USMLoader:
             df : dtype        
         """
         for path in PATHS:         
-
             # (a) find the names of the OTHER two paths
             other_paths = []
             for candidate in PATHS:
@@ -161,10 +159,10 @@ class USMLoader:
         excel_file = pd.ExcelFile(self.path)
         all_sheet_names = excel_file.sheet_names
         # Sheets with "run" in the name are the meter data
-        run_sheets = []
+        meter_data_sheets = []
         for sheet_name in all_sheet_names:
             if "run" in sheet_name.lower():
-                run_sheets.append(sheet_name)
+                meter_data_sheets.append(sheet_name)
 
         # The sheet with "gas" in the name is the gas composition (take the first one)
         gas_sheets = []
@@ -177,8 +175,8 @@ class USMLoader:
         self.gas = self.read_sheet(gas_sheet, GAS_RENAME)
 
         # a dictionary: a set of labelled tables
-        self.runs = {}
-        for sheet_name in run_sheets:
+        self.meter_data = {}
+        for sheet_name in meter_data_sheets:
             df = self.read_sheet(sheet_name, RENAME)
 
 
@@ -188,14 +186,14 @@ class USMLoader:
             # First draft of the zero-flow flag: True where flow is 0 (or missing)
             flow_with_gaps_filled = df["q_vol"].fillna(0)
             df["zero_flow"] = flow_with_gaps_filled.eq(0)
-            self.runs[sheet_name] = self.add_indicators(df)
+            self.meter_data[sheet_name] = self.add_indicators(df)
 
-        return self.runs, self.gas
+        return self.meter_data, self.gas
     
 
     def summary(self):
         """Print the size of every table."""
-        for name, df in self.runs.items():
+        for name, df in self.meter_data.items():
             number_of_zero_flow = int(df["zero_flow"].sum())
             number_of_missing = int(df.isna().sum().sum())
             print(name, df.shape, "zero-flow rows:", number_of_zero_flow, "NaNs:", number_of_missing)

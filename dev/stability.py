@@ -1,63 +1,77 @@
-"""RQ1: which health indicators stay stable under normal operation?
-
-StabilityAnalysis takes a prepared run (a Prepare object from prepare_oo.py, or a dataframe that
-has the `valid` and `segment` columns) and produces:
-
-    describe()       spread, drift, and within- vs between-segment variation per indicator
-    dependence()     Spearman correlation of each indicator with the process variables
-    effects()        regression effect of +1 standard deviation of each process variable,
-                     in the indicator's own units (m/s)
-    fit()            R2 and unexplained spread of that regression
-    step_response()  indicator change across each gas-composition update
-    summary()        one row per indicator with a heuristic verdict
-    plot()           time series + scatter against each process variable
-
-Usage:
-    p = Prepare(runs["Vega 2st stage run 1"], name="run 1").prepare()
-    sa = StabilityAnalysis(p)
-    sa.report()
-    sa.plot("run1_stability.png")
-
-Shell:
-    python stability.py <workbook.xlsx> <output_dir>
-
-Read the results with care: correlation is not causation, process variables move together
-(see collinearity()), and a short sample cannot say anything about variables that barely vary.
+"""Stability analysis of USM health indicators (answers RQ1).
+ 
+Question: which health indicators stay stable during normal operation, and which
+ones still depend on the process (pressure, temperature, flow, gas composition)?
+ 
+Input
+-----
+A prepared run: either a Prepare object from prepare.py (anything with a `.df`
+attribute), or a DataFrame with a one-minute DatetimeIndex and these columns:
+ 
+    valid     bool, True for rows with flow and good data
+    segment   int, id of each continuous stretch of valid data
+    indicators   dev_p1, dev_p2, dev_p3, gc_disc   (m/s)
+    process vars p, T, q_vol, mw
+ 
+Usage
+-----
+    analysis = StabilityAnalysis(prep, name="Gas meter A")
+    analysis.report()            # print every table
+    analysis.save("results/")    # write CSV files and a plot
+ 
+Methods, in the order the analysis runs
+---------------------------------------
+    describe()       mean, spread and drift of each indicator
+    dependence()     Spearman correlation of each indicator with each process variable
+    effects()        how much each indicator moves per +1 std of each process variable
+    fit()            how much of each indicator the process variables explain (R2)
+    collinearity()   process variables that move together (their effects can't be separated)
+    step_response()  how each indicator jumps when the gas composition is updated
+    summary()        one row per indicator with a verdict: stable / process-dependent
 """
-import sys
+from dataclasses import dataclass
 from pathlib import Path
-
+ 
+import matplotlib
+matplotlib.use("Agg")  # draw to files only, no window
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
+ 
+ 
+# ---- Columns ------------------------------------------------------------------------
 INDICATORS = ["dev_p1", "dev_p2", "dev_p3", "gc_disc"]
-PROCESS_VARS = ["p", "T", "q_vol", "mw"] 
-TRIM_MIN = 1           # drop the first minutes of every segment (restart transient)
-RHO_THRESH = 0.5        # |Spearman rho| at or above this = "depends on"
-R2_THRESH = 0.3         # regression R2 at or above this = "process-dependent"
-MIN_ROWS = 28           # fewer valid rows than this -> no verdict
-MW_TOL = 1e-6           # change in mole weight that counts as a composition update
+PROCESS_VARS = ["p", "T", "q_vol", "mw"]
+ 
+# ---- Verdict thresholds -------------------------------------------------------------
+RHO_THRESHOLD = 0.5    # |Spearman rho| at or above this: indicator depends on that variable
+R2_THRESHOLD = 0.3     # regression R2 at or above this: process explains the indicator
+ 
+# ---- Data handling ------------------------------------------------------------------
+TRIM_MIN = 3          # rows dropped at the start of each segment (meter settling)
+MW_TOL = 1e-6        # smallest change in molar weight counted as a composition update
+STEP_WINDOW_MINUTES = 5    # minutes averaged before and after each composition update
+ 
+ 
+@dataclass
+class RegressionResult:
+    effects: dict          # indicator change per +1 std of each process variable
+    r2: float              # share of the indicator's variance the process explains
+    residual_std: float    # spread left unexplained: the noise a fault must stand out from
 
-
+ 
 class StabilityAnalysis:
     def __init__(self, source, name=None, indicators=INDICATORS, process_vars=PROCESS_VARS,
-                 trim_min=TRIM_MIN, rho_thresh=RHO_THRESH, r2_thresh=R2_THRESH,
-                 fault_shift=None):
-        """fault_shift: optional {indicator: size of the fault you want to detect}, same units
-        as the indicator. Adds a detectability ratio (shift / unexplained spread) to summary()."""
-        df = source.df if hasattr(source, "df") else source
-        if "valid" not in df.columns or "segment" not in df.columns:
-            raise ValueError("expected `valid` and `segment` columns; run Prepare.prepare() first")
-        self.name = name or getattr(source, "name", "run")
+                  rho_thresh=RHO_THRESHOLD, r2_thresh=R2_THRESHOLD):
+
+        df = source.df
+        self.name = name or source.name
+        print("name",self.name)
         self.full = df
         self.indicators = [c for c in indicators if c in df.columns]
-        self.trim_min = trim_min
         self.rho_thresh = rho_thresh
         self.r2_thresh = r2_thresh
-        self.fault_shift = fault_shift or {}
+        self.trim_min = TRIM_MIN
 
         self.data = self._trimmed(df)
         wanted = [c for c in process_vars if c in df.columns]
@@ -70,17 +84,16 @@ class StabilityAnalysis:
         pos = v.groupby("segment").cumcount()
         return v[pos >= self.trim_min]
 
-    @property
-    def enough_data(self):
-        print("enough data", len(self.data) >= MIN_ROWS)
-        return len(self.data) >= MIN_ROWS
-
     # ---- 1. baseline -------------------------------------------------------------------
     def describe(self):
         rows = []
         for ind in self.indicators:
             s = self.data[ind].dropna()
+
+
             g = self.data.groupby("segment")[ind]
+
+
             n, var = g.count(), g.var(ddof=1)
             ok = n > 1
             within = np.sqrt((var[ok] * (n[ok] - 1)).sum() / (n[ok] - 1).sum()) if ok.any() else np.nan
@@ -96,11 +109,11 @@ class StabilityAnalysis:
     # ---- 2. dependence on process conditions ---------------------------------------------
     def dependence(self):
         """Spearman correlation: rows = indicators, columns = process variables."""
-        out = pd.DataFrame(index=self.indicators, columns=self.process_vars, dtype=float)
+        Spearman_correlation_table = pd.DataFrame(index=self.indicators, columns=self.process_vars, dtype=float)
         for ind in self.indicators:
             for var in self.process_vars:
-                out.loc[ind, var] = self.data[ind].corr(self.data[var], method="spearman")
-        return out
+                Spearman_correlation_table.loc[ind, var] = self.data[ind].corr(self.data[var], method="spearman")
+        return Spearman_correlation_table
 
     def _ols(self, ind):
         cols = self.process_vars
@@ -181,9 +194,7 @@ class StabilityAnalysis:
         for ind in self.indicators:
             depends = [v for v in self.process_vars if abs(rho.loc[ind, v]) >= self.rho_thresh]
             r2 = fit.loc[ind, "r2"]
-            if not self.enough_data:
-                verdict = "insufficient data"
-            elif depends or (pd.notna(r2) and r2 >= self.r2_thresh):
+            if depends or (pd.notna(r2) and r2 >= self.r2_thresh):
                 verdict = "process-dependent"
             else:
                 verdict = "stable"
@@ -192,10 +203,6 @@ class StabilityAnalysis:
                    "drift_per_day": desc.loc[ind, "drift_per_day"],
                    "r2": r2, "unexplained_std": fit.loc[ind, "resid_std"],
                    "depends_on": ", ".join(depends) or "-", "verdict": verdict}
-            if ind in self.fault_shift:
-                spread = row["unexplained_std"] if pd.notna(row["unexplained_std"]) else row["std"]
-                row["fault_shift"] = self.fault_shift[ind]
-                row["shift_over_spread"] = self.fault_shift[ind] / spread if spread else np.nan
             rows.append(row)
         return pd.DataFrame(rows).set_index("indicator")
 
@@ -205,8 +212,6 @@ class StabilityAnalysis:
         print(f"\n=== Stability: {self.name} ===")
         print(f"valid rows used: {len(self.data)} (first {self.trim_min} min of each segment dropped), "
               f"segments: {self.data['segment'].nunique()}")
-        if not self.enough_data:
-            print(f"  fewer than {MIN_ROWS} usable rows: no verdicts, results below are not reliable")
         if self.constant_vars:
             print(f"  constant in this data, so their effect cannot be assessed: {self.constant_vars}")
         print("\nBaseline:\n", self.describe())

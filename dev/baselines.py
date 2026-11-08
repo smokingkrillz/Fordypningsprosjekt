@@ -4,7 +4,6 @@ Baselines (all use only information available at the forecast origin):
     persistence      forecast = last value
     rolling_mean_k   forecast = mean of the last k values
     segment_mean     forecast = mean of the indicator since the segment started
-    train_mean       forecast = one constant, the mean of the training targets
 
 Scores: MAE and RMSE (in the indicator's unit, m/s), and skill versus persistence
 (1 - MAE / MAE_persistence; 0 = no better than persistence, positive = better, negative = worse).
@@ -73,19 +72,9 @@ class SegmentMean(Baseline):
         return X["seg_mean"].to_numpy()
 
 
-class TrainMean(Baseline):
-    name = "train_mean"
-
-    def fit(self, split):
-        self.mu = float(split.y.mean())
-        return self
-
-    def predict(self, X):
-        return np.full(len(X), self.mu)
-
 
 def default_baselines(lookback):
-    bl = [Persistence(), SegmentMean(), TrainMean()]
+    bl = [Persistence(), SegmentMean()]
     bl += [RollingMean(k) for k in (3, 5, 10) if k <= lookback]
     return bl
 
