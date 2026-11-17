@@ -12,7 +12,7 @@ import datetime
 import numpy as np
 import pandas as pd
 
-FILE = "input/Vega 2st stage low flow.xlsx"
+FILE = "input/Gasseksport minuttdata.xlsx"
 HEADER_ROW = 6          # 0-based row index with the column names (header=None)
 DATA_ROW = 8           # 0-based row index of the first data row
 
@@ -27,13 +27,28 @@ RENAME = {
     "Measured VOS path 01": "vos_p1",
     "Measured VOS path 02": "vos_p2",
     "Measured VOS path 03": "vos_p3",
+    "Measured VOS path 04": "vos_p4",
+    "Measured VOS path 05": "vos_p5",
+    "Measured VOS path 06": "vos_p6",
     "Flow velocity": "v",
     "Measured flow velocity path 01": "v_p1",
     "Measured flow velocity path 02": "v_p2",
     "Measured flow velocity path 03": "v_p3",
-    "S/N ratio used signal path 01": "snr_p1",
-    "S/N ratio used signal path 02": "snr_p2",
-    "S/N ratio used signal path 03": "snr_p3",
+    "Measured flow velocity path 04": "v_p4",
+    "Measured flow velocity path 05": "v_p5",
+    "Measured flow velocity path 06": "v_p6",
+    "S/N ratio raw signal path 01": "snr_p1",
+    "S/N ratio raw signal path 02": "snr_p2",
+    "S/N ratio raw signal path 03": "snr_p3",
+    "S/N ratio raw signal path 04": "snr_p4",
+    "S/N ratio raw signal path 05": "snr_p5",
+    "S/N ratio raw signal path 06": "snr_p6",
+    "S/N ratio used signal path 01": "snr_p1_u",
+    "S/N ratio used signal path 02": "snr_p2_u",
+    "S/N ratio used signal path 03": "snr_p3_u",
+    "S/N ratio used signal path 04": "snr_p4_u",
+    "S/N ratio used signal path 05": "snr_p5_u",
+    "S/N ratio used signal path 06": "snr_p6_u",
 }
 GAS_RENAME = {
     "VOS calculated from gas composition": "vos_gc",
@@ -171,7 +186,6 @@ class USMLoader:
                 gas_sheets.append(sheet_name)
         gas_sheet = gas_sheets[0]
 
-
         self.gas = self.read_sheet(gas_sheet, GAS_RENAME)
 
         # a dictionary: a set of labelled tables
@@ -187,6 +201,7 @@ class USMLoader:
             flow_with_gaps_filled = df["q_vol"].fillna(0)
             df["zero_flow"] = flow_with_gaps_filled.eq(0)
             self.meter_data[sheet_name] = self.add_indicators(df)
+            
 
         return self.meter_data, self.gas
     

@@ -66,6 +66,11 @@ class Prepare:
         """
         df = self.df
         df["zero_flow"] = df["q_vol"].abs().le(self.q_zero)
+        print("duplicated timestamps:", df.index.duplicated().sum())
+        print("index sorted:", df.index.is_monotonic_increasing)
+        print(df.index[df.index.duplicated(keep=False)][:10])   # which timestamps repeat
+        steps = df.index.to_series().diff().dropna().value_counts()
+        print(steps.head())                                      # should be only 1 minute
  
         snr_cols = [f"snr_{p}" for p in PATHS]
         vos_cols = [f"vos_{p}" for p in PATHS]

@@ -12,7 +12,7 @@ from dev.load_usm import PATHS
 
 OUT_DIR = "plots"
 DPI = 300
-RUN_TITLES = ["Run 1 - low flow", "Run 2 - zero flow"]    # matched to the run sheets in order
+RUN_TITLES = ["Gasseksport run 1", "Gasseksport run 2"]    # matched to the run sheets in order
 C = {"p1": "#2a78d6", "p2": "#eb6834", "p3": "#1baf7a"}   # categorical slots 1-3 (validated all-pairs)
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e6e5e1"
 SUBTITLE = "USM Gas - raw sample, (1-min data)"
